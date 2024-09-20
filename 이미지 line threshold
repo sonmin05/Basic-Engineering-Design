@@ -1,0 +1,83 @@
+#define TSL1401_CLK 22   
+#define TSL1401_SI 23  
+#define TSL1401_AO A0   
+#define NPIXELS 128   
+
+byte Pixel[NPIXELS];   
+
+#define FASTADC 1     
+
+byte threshold_data[NPIXELS]; // 임계값 처리된 데이터를 저장하는 배열
+
+// 픽셀 데이터를 임계값을 기준으로 이진화하는 함수
+void line_threshold(int threshold) 
+{
+  for(int i = 0; i < NPIXELS; i++) 
+  {
+    threshold_data[i] = (Pixel[i] > threshold) ? 255 : 0; 
+  }
+}
+
+
+void setup() 
+{
+    Serial.begin(115200);  // 시리얼 통신 설정
+    pinMode(TSL1401_CLK, OUTPUT); // CLK, SI 핀 출력 설정
+    pinMode(TSL1401_SI, OUTPUT);
+  
+    #if FASTADC
+      sbi(ADCSRA, ADPS2);
+      cbi(ADCSRA, ADPS1);
+      cbi(ADCSRA, ADPS0);
+    #endif
+}
+
+// 카메라로부터 데이터를 읽는 함수
+void read_TSL1401_camera() 
+{
+    // SI 신호로 픽셀 데이터 읽기 시작
+    digitalWrite(TSL1401_SI, HIGH);
+    digitalWrite(TSL1401_CLK, HIGH);
+    delayMicroseconds(1);
+    digitalWrite(TSL1401_CLK, LOW);
+    digitalWrite(TSL1401_SI, LOW);
+    delayMicroseconds(1);
+
+    // 각 픽셀 데이터를 읽어 Pixel 배열에 저장
+    for(int i = 0; i < NPIXELS; i++) 
+    {
+        digitalWrite(TSL1401_CLK, HIGH);
+        delayMicroseconds(1);
+        Pixel[i] = analogRead(TSL1401_AO);  // 아날로그 데이터 읽기
+        digitalWrite(TSL1401_CLK, LOW);
+        delayMicroseconds(1);
+    }
+}
+
+// 시리얼 통신으로 카메라 데이터를 전송하는 함수
+void send_camera_data_serial() 
+{
+    // 각 픽셀 데이터와 임계값 처리된 데이터를 전송
+    for(int i = 0; i < NPIXELS; i++) 
+    {
+        Serial.print(Pixel[i]);
+        Serial.print(",");
+        Serial.println(threshold_data[i]);
+    }
+
+    for(int i = 0; i < 64; i++) 
+    {
+        Serial.print(0);
+        Serial.print(",");
+        Serial.println(0);
+    }
+}
+
+// 메인 루프
+void loop() 
+{
+    read_TSL1401_camera();  // 카메라 데이터 읽기
+    line_threshold(150);    // 임계값 적용
+    send_camera_data_serial();  // 시리얼 통신으로 데이터 전송
+    delay(100);  // 100ms 대기
+}
