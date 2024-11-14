@@ -36,7 +36,7 @@ float error_old = 0.0;
 void setup()
 {
 
-  MsTimer2::set(175, line_tracer); // 175ms 주기
+  MsTimer2::set(20, line_tracer); // 175ms 주기
   MsTimer2::start();
   int i;
   for (i = 0; i < NPIXELS; i++)
