@@ -1,0 +1,176 @@
+#include <Wire.h>
+#include <LSM303.h>
+
+#define IN1 10
+#define IN2 11
+#define ENL 12      
+#define IN3 13
+#define IN4 14
+#define ENR 15
+
+#define ENCODER_A_C1_PIN 40 
+#define ENCODER_A_C2_PIN 41 
+#define ENCODER_B_C1_PIN 42 
+#define ENCODER_B_C2_PIN 43  
+LSM303 compass;
+
+float target_heading_angle = 90;        
+float kp_yaw = 0.21;                    
+float kd_yaw = 0.4;
+float error_yaw = 0.0;
+float error_yaw_old = 0.0;
+float pid_out;
+float target_yaw;
+int mission_flag;
+
+double robot_distance = 0.0;         
+long encoder_A_pulse = 0;                  
+long encoder_B_pulse = 0;                  
+long prev_encoder_A = 0;                
+long prev_encoder_B = 0;               
+
+int current_encoder_A = 0;
+int current_encoder_B = 0;
+const double meter_per_pulse = 0.0003498;  
+
+void update_encoder_values() 
+{
+  current_encoder_A = digitalRead(ENCODER_A_C1_PIN);  
+  current_encoder_B = digitalRead(ENCODER_B_C1_PIN);  
+}
+
+void reset_encoder(void) 
+{
+  encoder_A_pulse = 0;                
+  encoder_B_pulse = 0;                  
+  prev_encoder_A = 0;
+  prev_encoder_B = 0;
+}
+
+double update_distance(void) 
+{
+  long delta_A = current_encoder_A - prev_encoder_A; 
+  long delta_B = current_encoder_B - prev_encoder_B;
+
+  double distance = ((delta_A + delta_B) * meter_per_pulse) / 2.0; 
+  robot_distance += distance;                
+
+  prev_encoder_A = current_encoder_A;
+  prev_encoder_B = current_encoder_B;
+
+  return distance;                           
+}
+
+void motor_l(int speed) 
+{
+  if (speed >= 0) 
+  {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    analogWrite(ENL, speed);
+  } 
+  else 
+  {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    analogWrite(ENL, -speed);
+  }
+}
+
+void motor_r(int speed) 
+{
+  if (speed >= 0) 
+  {
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+    analogWrite(ENR, speed);
+  } 
+  else 
+  {
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+    analogWrite(ENR, -speed);
+  }
+}
+
+void motor_control(int left_motor_speed, int right_motor_speed) 
+{
+  motor_l(left_motor_speed);
+  motor_r(right_motor_speed);
+}
+
+void yaw_control(void) 
+{
+  float error_yaw_d;
+  int l_motor_speed;
+  int r_motor_speed;
+
+  compass.read();
+  float heading_angle = compass.heading();
+
+  error_yaw = target_yaw - heading_angle;
+  error_yaw_d = error_yaw - error_yaw_old;
+  pid_out = kp_yaw * error_yaw + kd_yaw * error_yaw_d;
+  error_yaw_old = error_yaw;
+
+  l_motor_speed = base_speed + (int)pid_out;
+  r_motor_speed = base_speed - (int)pid_out;
+
+  motor_control(l_motor_speed, r_motor_speed);
+}
+
+void setup() 
+{
+  pinMode(ENL, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENR, OUTPUT);
+
+  Serial.begin(115200);
+
+  Wire.begin();
+  compass.init();
+  compass.enableDefault();
+
+  mission_flag = 0;
+  reset_encoder();
+  robot_distance = 0.0;
+}
+
+void loop() 
+{
+  switch (mission_flag) 
+  {
+    case 0:
+      motor_control(0, 0);
+      delay(500);
+      reset_encoder();
+      robot_distance = 0.0;
+      mission_flag = 1;
+      break;
+
+    case 1: // 1미터 직진
+      motor_control(100, 80);
+      update_distance();
+      if (robot_distance >= 1.0) 
+      {
+        target_yaw = 90 + compass.heading();
+        yaw_control();
+        mission_flag = 2;
+      }
+      break;
+
+    case 2: // 회전 각도 조정
+      if ((error_yaw < 5) && (error_yaw > -5))
+      {
+        motor_control(0, 0);             
+      }
+      else
+      {
+        yaw_control();                  
+      }
+      break;
+  }
+}
